@@ -372,7 +372,7 @@ Propagit.prototype.drone = function (fn) {
         process.env.COMMIT = commit;
         process.env.REPO = repo;
         
-        var id = Math.floor(Math.random() * (1<<24)).toString(16);
+        var id = Math.round((Math.random() * 15728639) + 1048576).toString(16);
         process.env.PROCESS_ID = id;
         
         Object.keys(opts.env || {}).forEach(function (key) {
@@ -469,6 +469,8 @@ Propagit.prototype.drone = function (fn) {
 
 Propagit.prototype.stop = function (opts, cb) {
     var self = this;
+
+    opts.drone = '*';
     
     self.hub(function (hub) {
         hub.stop(opts, function(err, procs) {
