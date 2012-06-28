@@ -328,6 +328,7 @@ Propagit.prototype.drone = function (fn) {
     
     actions.stop = function (ids, cb) {
         if (typeof cb !== 'function') cb = function () {};
+        if (ids[0] === '*') ids = Object.keys(self.processes);
         if (!Array.isArray(ids)) ids = [ ids ];
         cb(ids.filter(function (id) {
             var proc = self.processes[id];
@@ -469,8 +470,6 @@ Propagit.prototype.drone = function (fn) {
 
 Propagit.prototype.stop = function (opts, cb) {
     var self = this;
-
-    opts.drone = '*';
     
     self.hub(function (hub) {
         hub.stop(opts, function(err, procs) {

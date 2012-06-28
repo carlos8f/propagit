@@ -158,7 +158,8 @@ test('command line deploy', function (t) {
     function stop (pids) {
         ps.stop = spawn(cmd, [
             'stop', '--hub=localhost:' + port, '--secret=beepboop',
-        ].concat(pids));
+            '--all',
+        ]);
         ps.stop.stdout.pipe(process.stdout, { end : false });
         ps.stop.stderr.pipe(process.stderr, { end : false });
         ps.stop.on('exit', function() {
