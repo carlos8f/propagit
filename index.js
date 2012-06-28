@@ -471,7 +471,7 @@ Propagit.prototype.stop = function (opts, cb) {
     var self = this;
     
     self.hub(function (hub) {
-        hub.stop(opts, function(procs) {
+        hub.stop(opts, function(err, procs) {
             self.emit('stop', procs);
             if (cb) cb(null, procs);
         });

@@ -102,7 +102,8 @@ test('command line deploy', function (t) {
                 t.equal(obj[1].REPO, 'webapp');
                 t.ok(obj[1].COMMIT.match(/^[0-9a-f]{40}$/));
                 t.equal(obj[1].PROPAGIT_BEEPITY, 'boop');
-                t.ok(obj[1].PROCESS_ID.match(/^[0-9a-f]{6,}$/));
+                var processId = obj[1].PROCESS_ID;
+                t.ok(processId.match(/^[0-9a-f]{6,}$/));
                 
                 var droneId = obj[1].DRONE_ID;
                 
@@ -110,18 +111,41 @@ test('command line deploy', function (t) {
                     'ps', '--json',
                     '--hub=localhost:' + port, '--secret=beepboop',
                 ]);
-                readPs(ps.ps, droneId);
+                readPs(ps.ps, droneId, processId);
             });
         });
     }
     
-    function readPs (p, droneId) {
+    function readPs (p, droneId, processId) {
         var json = '';
         p.stdout.on('data', function (buf) { json += buf });
         p.stdout.on('end', function () {
             var obj = JSON.parse(json);
             t.equal(Object.keys(obj)[0], droneId);
-            t.end();
+            t.ok(obj[droneId][processId]);
+            stop(droneId, processId);
+        });
+    }
+
+    function stop (droneId, processId) {
+        ps.stop = spawn(cmd, [
+            'stop', '--hub=localhost:' + port, '--secret=beepboop',
+            processId,
+        ]);
+        ps.stop.stdout.pipe(process.stdout, { end : false });
+        ps.stop.stderr.pipe(process.stderr, { end : false });
+        ps.stop.on('exit', function() {
+            ps.ps2 = spawn(cmd, [
+                'ps', '--json',
+                '--hub=localhost:' + port, '--secret=beepboop',
+            ]);
+            var json = '';
+            ps.ps2.stdout.on('data', function (buf) { json += buf });
+            ps.ps2.stdout.on('end', function () {
+                var obj = JSON.parse(json);
+                t.equal(Object.keys(obj[droneId]).length, 0);
+                t.end();
+            });
         });
     }
     

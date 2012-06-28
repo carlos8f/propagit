@@ -113,6 +113,19 @@ else if (cmd === 'ps') {
         });
     }
 }
+else if (cmd === 'stop') {
+    var s = propagit(argv).stop({
+        drone : argv.drone,
+        drones : argv.drones,
+        pid : argv._.map(function (x) { return x.toString().replace(/^pid#/, '') }),
+    });
+    s.on('stop', function(drones) {
+        Object.keys(drones).forEach(function (id) {
+            console.log('[' + id + '] stopped ' + drones[id].join(' '));
+        });
+        s.hub.close();
+    });
+}
 else {
     console.log([
         'Usage:',
@@ -149,6 +162,11 @@ else {
         '  propagit OPTIONS ps',
         '',
         '    List all the running processes on all the drones.',
+        '',
+        '  propagit OPTIONS stop PID [PID...]',
+        '',
+        '    Kill spawned processes on all drones specified by OPTIONS.',
+        '    A leading "pid#" will be stripped.',
         '',
         '',
     ].join('\n'));
