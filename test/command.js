@@ -11,11 +11,13 @@ var cmd = __dirname + '/../bin/cli.js';
 var tmpdir = '/tmp/' + Math.floor(Math.random() * (1<<24)).toString(16);
 var dirs = {
     hub : tmpdir + '/hub',
-    drone : tmpdir + '/drone',
+    drone1 : tmpdir + '/drone1',
+    drone2 : tmpdir + '/drone2',
     repo : tmpdir + '/webapp',
 };
 mkdirp.sync(dirs.hub);
-mkdirp.sync(dirs.drone);
+mkdirp.sync(dirs.drone1);
+mkdirp.sync(dirs.drone2);
 mkdirp.sync(dirs.repo);
 
 var src = fs.readFileSync(__dirname + '/webapp/server.js');
@@ -23,7 +25,8 @@ fs.writeFileSync(dirs.repo + '/server.js', src);
 
 test('command line deploy', function (t) {
     var port = Math.floor(Math.random() * 5e4 + 1e4);
-    var httpPort = Math.floor(Math.random() * 5e4 + 1e4);
+    var httpPort1 = Math.floor(Math.random() * 5e4 + 1e4);
+    var httpPort2 = Math.floor(Math.random() * 5e4 + 1e4);
     
     var ps = {};
     ps.hub = spawn(
@@ -33,12 +36,19 @@ test('command line deploy', function (t) {
     ps.hub.stdout.pipe(process.stdout, { end : false });
     ps.hub.stderr.pipe(process.stderr, { end : false });
     
-    ps.drone = spawn(
+    ps.drone1 = spawn(
         cmd, [ 'drone', '--hub=localhost:' + port, '--secret=beepboop' ],
-        { cwd : dirs.drone }
+        { cwd : dirs.drone1 }
     );
-    ps.drone.stdout.pipe(process.stdout, { end : false });
-    ps.drone.stderr.pipe(process.stderr, { end : false });
+    ps.drone1.stdout.pipe(process.stdout, { end : false });
+    ps.drone1.stderr.pipe(process.stderr, { end : false });
+
+    ps.drone2 = spawn(
+        cmd, [ 'drone', '--hub=localhost:' + port, '--secret=beepboop' ],
+        { cwd : dirs.drone2 }
+    );
+    ps.drone2.stdout.pipe(process.stdout, { end : false });
+    ps.drone2.stderr.pipe(process.stderr, { end : false });
     
     setTimeout(function () {
         var opts = { cwd : dirs.repo };
@@ -86,13 +96,32 @@ test('command line deploy', function (t) {
             'spawn', '--hub=localhost:' + port, '--secret=beepboop',
             '--env.PROPAGIT_BEEPITY=boop',
             'webapp', commit,
-            'node', 'server.js', httpPort,
+            'node', 'server.js', httpPort1,
         ]);
-        setTimeout(testServer, 2000);
+        ps.run = spawn(cmd, [
+            'spawn', '--hub=localhost:' + port, '--secret=beepboop',
+            '--env.PROPAGIT_BEEPITY=boop',
+            'webapp', commit,
+            'node', 'server.js', httpPort2,
+        ]);
+        setTimeout(function() {
+            var pids = [];
+            testServer(httpPort1, function(droneId, processId) {
+                pids.push(processId);
+                assertProcess(droneId, processId, function() {
+                    testServer(httpPort2, function(droneId, processId) {
+                        pids.push(processId);
+                        assertProcess(droneId, processId, function() {
+                            setTimeout(stop.bind(null, pids), 1000);
+                        });
+                    })
+                });
+            });
+        }, 2000);
     }
     
-    function testServer () {
-        var opts = { host : 'localhost', port : httpPort, path : '/' };
+    function testServer (port, cb) {
+        var opts = { host : 'localhost', port : port, path : '/' };
         http.get(opts, function (res) {
             var data = '';
             res.on('data', function (buf) { data += buf });
@@ -106,46 +135,50 @@ test('command line deploy', function (t) {
                 t.ok(processId.match(/^[0-9a-f]{6,}$/));
                 
                 var droneId = obj[1].DRONE_ID;
-                
-                ps.ps = spawn(cmd, [
-                    'ps', '--json',
-                    '--hub=localhost:' + port, '--secret=beepboop',
-                ]);
-                readPs(ps.ps, droneId, processId);
+
+                cb(droneId, processId);
             });
         });
     }
     
-    function readPs (p, droneId, processId) {
+    function assertProcess (droneId, processId, cb) {
         var json = '';
+        var p = spawn(cmd, [
+            'ps', '--json',
+            '--hub=localhost:' + port, '--secret=beepboop',
+        ]);
         p.stdout.on('data', function (buf) { json += buf });
         p.stdout.on('end', function () {
             var obj = JSON.parse(json);
-            t.equal(Object.keys(obj)[0], droneId);
             t.ok(obj[droneId][processId]);
-            stop(droneId, processId);
+            cb();
         });
     }
 
-    function stop (droneId, processId) {
+    function stop (pids) {
         ps.stop = spawn(cmd, [
             'stop', '--hub=localhost:' + port, '--secret=beepboop',
-            processId,
-        ]);
+        ].concat(pids));
         ps.stop.stdout.pipe(process.stdout, { end : false });
         ps.stop.stderr.pipe(process.stderr, { end : false });
         ps.stop.on('exit', function() {
-            ps.ps2 = spawn(cmd, [
-                'ps', '--json',
-                '--hub=localhost:' + port, '--secret=beepboop',
-            ]);
-            var json = '';
-            ps.ps2.stdout.on('data', function (buf) { json += buf });
-            ps.ps2.stdout.on('end', function () {
-                var obj = JSON.parse(json);
+            setTimeout(assertAllStopped, 1000);
+        });
+    }
+
+    function assertAllStopped () {
+        ps.ps2 = spawn(cmd, [
+            'ps', '--json',
+            '--hub=localhost:' + port, '--secret=beepboop',
+        ]);
+        var json = '';
+        ps.ps2.stdout.on('data', function (buf) { json += buf });
+        ps.ps2.stdout.on('end', function () {
+            var obj = JSON.parse(json);
+            Object.keys(obj).forEach(function(droneId) {
                 t.equal(Object.keys(obj[droneId]).length, 0);
-                t.end();
             });
+            t.end();
         });
     }
     
