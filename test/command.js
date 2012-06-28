@@ -15,10 +15,10 @@ var dirs = {
     repo : tmpdir + '/webapp',
 };
 var drones = ['drone1', 'drone2', 'drone3'];
-drones.forEach(function(drone) {
+drones.forEach(function (drone) {
     dirs[drone] = tmpdir + '/' + drone;
 });
-Object.keys(dirs).forEach(function(name) {
+Object.keys(dirs).forEach(function (name) {
     mkdirp.sync(dirs[name]);
 });
 
@@ -38,12 +38,12 @@ test('command line deploy', function (t) {
 
     httpPorts = [];
     
-    drones.forEach(function(drone) {
+    drones.forEach(function (drone) {
         ps[drone] = spawn(
             cmd, [ 'drone', '--hub=localhost:' + port, '--secret=beepboop' ],
             { cwd : dirs[drone] }
         );
-        ps[drone].stdout.on('data', function(buf) {
+        ps[drone].stdout.on('data', function (buf) {
             var matches = /port:(\d+)/.exec(buf);
             if (matches) {
                 httpPorts.push(parseInt(matches[1]));
@@ -53,7 +53,7 @@ test('command line deploy', function (t) {
         ps[drone].stderr.pipe(process.stderr, { end : false });
     });
 
-    function doCommands(commands) {
+    function doCommands (commands) {
         var opts = { cwd : dirs.repo };
         (function pop (s) {
             var cmd = commands.shift();
@@ -69,7 +69,7 @@ test('command line deploy', function (t) {
         })();
     }
 
-    (function initialCommit() {
+    (function initialCommit () {
         setTimeout(doCommands.bind(null, [
             'git init',
             'git add server.js',
@@ -88,18 +88,18 @@ test('command line deploy', function (t) {
         ]), 2000);
     })();
 
-    function testInitialVersion() {
+    function testInitialVersion () {
         var s = seq(), expected = 'beepity';
         t.equal(httpPorts.length, drones.length);
-        httpPorts.forEach(function(port) {
-            s.par(function() {
+        httpPorts.forEach(function (port) {
+            s.par(function () {
                 testServer(port, expected, this);
             });
         });
         s.seq(secondCommit);
     }
 
-    function secondCommit() {
+    function secondCommit () {
         httpPorts = [];
         doCommands([
             'sed -i s/beep/boop/g server.js',
@@ -118,11 +118,11 @@ test('command line deploy', function (t) {
         ]);
     }
 
-    function testSecondVersion() {
+    function testSecondVersion () {
         var s = seq(), expected = 'boopity';
         t.equal(httpPorts.length, drones.length);
-        httpPorts.forEach(function(port) {
-            s.par(function() {
+        httpPorts.forEach(function (port) {
+            s.par(function () {
                 testServer(port, expected, this);
             });
         });
@@ -162,10 +162,10 @@ test('command line deploy', function (t) {
     }
 
     function assertRunning (commit, cb) {
-        getProcs(function(procs) {
+        getProcs(function (procs) {
             var running = 0;
-            Object.keys(procs).forEach(function(droneId) {
-                Object.keys(procs[droneId]).forEach(function(procId) {
+            Object.keys(procs).forEach(function (droneId) {
+                Object.keys(procs[droneId]).forEach(function (procId) {
                     if (procs[droneId][procId].commit === commit && procs[droneId][procId].status === 'running') {
                         running++;
                     }
@@ -200,7 +200,7 @@ test('command line deploy', function (t) {
         ]);
         ps.stop.stdout.pipe(process.stdout, { end : false });
         ps.stop.stderr.pipe(process.stderr, { end : false });
-        ps.stop.on('exit', function() {
+        ps.stop.on('exit', function () {
             setTimeout(assertAllStopped, 1000);
         });
     }
@@ -214,7 +214,7 @@ test('command line deploy', function (t) {
         ps.ps2.stdout.on('data', function (buf) { json += buf });
         ps.ps2.stdout.on('end', function () {
             var obj = JSON.parse(json);
-            Object.keys(obj).forEach(function(droneId) {
+            Object.keys(obj).forEach(function (droneId) {
                 t.equal(Object.keys(obj[droneId]).length, 0);
             });
             t.end();
