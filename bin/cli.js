@@ -80,6 +80,8 @@ else if (cmd === 'spawn') {
     var command = argv._.slice(3);
     
     var s = propagit(argv).spawn({
+        drone : argv.drone || '*',
+        drones : argv.drones,
         repo : repo,
         commit : commit,
         command : command,

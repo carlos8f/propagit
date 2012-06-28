@@ -3,6 +3,7 @@ var test = require('tap').test;
 var spawn = require('child_process').spawn;
 var exec = require('child_process').exec;
 var fs = require('fs');
+var seq = require('seq');
 
 var mkdirp = require('mkdirp');
 var http = require('http');
@@ -11,22 +12,21 @@ var cmd = __dirname + '/../bin/cli.js';
 var tmpdir = '/tmp/' + Math.floor(Math.random() * (1<<24)).toString(16);
 var dirs = {
     hub : tmpdir + '/hub',
-    drone1 : tmpdir + '/drone1',
-    drone2 : tmpdir + '/drone2',
     repo : tmpdir + '/webapp',
 };
-mkdirp.sync(dirs.hub);
-mkdirp.sync(dirs.drone1);
-mkdirp.sync(dirs.drone2);
-mkdirp.sync(dirs.repo);
+var drones = ['drone1', 'drone2', 'drone3'];
+drones.forEach(function(drone) {
+    dirs[drone] = tmpdir + '/' + drone;
+});
+Object.keys(dirs).forEach(function(name) {
+    mkdirp.sync(dirs[name]);
+});
 
 var src = fs.readFileSync(__dirname + '/webapp/server.js');
 fs.writeFileSync(dirs.repo + '/server.js', src);
 
 test('command line deploy', function (t) {
     var port = Math.floor(Math.random() * 5e4 + 1e4);
-    var httpPort1 = Math.floor(Math.random() * 5e4 + 1e4);
-    var httpPort2 = Math.floor(Math.random() * 5e4 + 1e4);
     
     var ps = {};
     ps.hub = spawn(
@@ -35,39 +35,26 @@ test('command line deploy', function (t) {
     );
     ps.hub.stdout.pipe(process.stdout, { end : false });
     ps.hub.stderr.pipe(process.stderr, { end : false });
-    
-    ps.drone1 = spawn(
-        cmd, [ 'drone', '--hub=localhost:' + port, '--secret=beepboop' ],
-        { cwd : dirs.drone1 }
-    );
-    ps.drone1.stdout.pipe(process.stdout, { end : false });
-    ps.drone1.stderr.pipe(process.stderr, { end : false });
 
-    ps.drone2 = spawn(
-        cmd, [ 'drone', '--hub=localhost:' + port, '--secret=beepboop' ],
-        { cwd : dirs.drone2 }
-    );
-    ps.drone2.stdout.pipe(process.stdout, { end : false });
-    ps.drone2.stderr.pipe(process.stderr, { end : false });
+    httpPorts = [];
     
-    setTimeout(function () {
-        var opts = { cwd : dirs.repo };
-        var commands = [
-            'git init',
-            'git add server.js',
-            'git commit -m"web server"',
-            'git log|head -n1',
-            function (line) {
-                var commit = line.split(/\s+/)[1]
-                exec(
-                    'git push http://localhost:'
-                        + (port + 1)
-                        + '/webapp master',
-                    opts,
-                    deploy.bind(null, commit)
-                );
+    drones.forEach(function(drone) {
+        ps[drone] = spawn(
+            cmd, [ 'drone', '--hub=localhost:' + port, '--secret=beepboop' ],
+            { cwd : dirs[drone] }
+        );
+        ps[drone].stdout.on('data', function(buf) {
+            var matches = /port:(\d+)/.exec(buf);
+            if (matches) {
+                httpPorts.push(parseInt(matches[1]));
             }
-        ];
+        });
+        ps[drone].stdout.pipe(process.stdout, { end : false });
+        ps[drone].stderr.pipe(process.stderr, { end : false });
+    });
+
+    function doCommands(commands) {
+        var opts = { cwd : dirs.repo };
         (function pop (s) {
             var cmd = commands.shift();
             if (!cmd) return;
@@ -80,68 +67,89 @@ test('command line deploy', function (t) {
                 cmd(s);
             }
         })();
-    }, 2000);
+    }
+
+    (function initialCommit() {
+        setTimeout(doCommands.bind(null, [
+            'git init',
+            'git add server.js',
+            'git commit -m"web server"',
+            'git log|head -n1',
+            function (line) {
+                var commit = line.split(/\s+/)[1]
+                exec(
+                    'git push http://localhost:'
+                        + (port + 1)
+                        + '/webapp master',
+                    { cwd : dirs.repo },
+                    deploy.bind(null, commit, testInitialVersion)
+                );
+            }
+        ]), 2000);
+    })();
+
+    function testInitialVersion() {
+        var s = seq(), expected = 'beepity';
+        t.equal(httpPorts.length, drones.length);
+        httpPorts.forEach(function(port) {
+            s.par(function() {
+                testServer(port, expected, this);
+            });
+        });
+        s.seq(secondCommit);
+    }
+
+    function secondCommit() {
+        httpPorts = [];
+        doCommands([
+            'sed -i s/beep/boop/g server.js',
+            'git commit -a -m "boopify"',
+            'git log|head -n1',
+            function (line) {
+                var commit = line.split(/\s+/)[1]
+                exec(
+                    'git push http://localhost:'
+                        + (port + 1)
+                        + '/webapp master',
+                    { cwd : dirs.repo },
+                    deploy.bind(null, commit, testSecondVersion)
+                );
+            }
+        ]);
+    }
+
+    function testSecondVersion() {
+        var s = seq(), expected = 'boopity';
+        t.equal(httpPorts.length, drones.length);
+        httpPorts.forEach(function(port) {
+            s.par(function() {
+                testServer(port, expected, this);
+            });
+        });
+        s.seq(stop.bind(null));
+    }
     
-    function deploy (commit, err, stdout, stderr) {
+    function deploy (commit, cb, err, stdout, stderr) {
         if (err) t.fail(err);
         ps.deploy = spawn(cmd, [
             'deploy', '--hub=localhost:' + port, '--secret=beepboop',
             'webapp', commit
         ]);
-        ps.deploy.on('exit', run.bind(null, commit));
+        ps.deploy.on('exit', run.bind(null, commit, cb));
     }
     
-    function run (commit) {
+    function run (commit, cb) {
         ps.run = spawn(cmd, [
             'spawn', '--hub=localhost:' + port, '--secret=beepboop',
-            '--env.PROPAGIT_BEEPITY=boop',
+            '--drone=*', '--env.PROPAGIT_BEEPITY=boop',
             'webapp', commit,
-            'node', 'server.js', httpPort1,
+            'node', 'server.js',
         ]);
-        ps.run = spawn(cmd, [
-            'spawn', '--hub=localhost:' + port, '--secret=beepboop',
-            '--env.PROPAGIT_BEEPITY=boop',
-            'webapp', commit,
-            'node', 'server.js', httpPort2,
-        ]);
-        setTimeout(function() {
-            var pids = [];
-            testServer(httpPort1, function(droneId, processId) {
-                pids.push(processId);
-                assertProcess(droneId, processId, function() {
-                    testServer(httpPort2, function(droneId, processId) {
-                        pids.push(processId);
-                        assertProcess(droneId, processId, function() {
-                            setTimeout(stop.bind(null, pids), 1000);
-                        });
-                    })
-                });
-            });
-        }, 2000);
-    }
-    
-    function testServer (port, cb) {
-        var opts = { host : 'localhost', port : port, path : '/' };
-        http.get(opts, function (res) {
-            var data = '';
-            res.on('data', function (buf) { data += buf });
-            res.on('end', function () {
-                var obj = JSON.parse(data);
-                t.equal(obj[0], 'beepity');
-                t.equal(obj[1].REPO, 'webapp');
-                t.ok(obj[1].COMMIT.match(/^[0-9a-f]{40}$/));
-                t.equal(obj[1].PROPAGIT_BEEPITY, 'boop');
-                var processId = obj[1].PROCESS_ID;
-                t.ok(processId.match(/^[0-9a-f]{6,}$/));
-                
-                var droneId = obj[1].DRONE_ID;
 
-                cb(droneId, processId);
-            });
-        });
+        setTimeout(assertRunning.bind(null, commit, cb), 2000);
     }
-    
-    function assertProcess (droneId, processId, cb) {
+
+    function getProcs (cb) {
         var json = '';
         var p = spawn(cmd, [
             'ps', '--json',
@@ -149,13 +157,43 @@ test('command line deploy', function (t) {
         ]);
         p.stdout.on('data', function (buf) { json += buf });
         p.stdout.on('end', function () {
-            var obj = JSON.parse(json);
-            t.ok(obj[droneId][processId]);
-            cb();
+            cb(JSON.parse(json));
         });
     }
 
-    function stop (pids) {
+    function assertRunning (commit, cb) {
+        getProcs(function(procs) {
+            var running = 0;
+            Object.keys(procs).forEach(function(droneId) {
+                Object.keys(procs[droneId]).forEach(function(procId) {
+                    if (procs[droneId][procId].commit === commit && procs[droneId][procId].status === 'running') {
+                        running++;
+                    }
+                });
+            });
+            t.equal(running, drones.length);
+            cb();
+        });
+    }
+    
+    function testServer (port, expected, cb) {
+        var opts = { host : 'localhost', port : port, path : '/' };
+        http.get(opts, function (res) {
+            var data = '';
+            res.on('data', function (buf) { data += buf });
+            res.on('end', function () {
+                var obj = JSON.parse(data);
+                t.equal(obj[0], expected);
+                t.equal(obj[1].REPO, 'webapp');
+                t.ok(obj[1].COMMIT.match(/^[0-9a-f]{40}$/));
+                t.equal(obj[1].PROPAGIT_BEEPITY, 'boop');
+                t.ok(obj[1].PROCESS_ID.match(/^[0-9a-f]{6,}$/));
+                cb();
+            });
+        });
+    }
+
+    function stop () {
         ps.stop = spawn(cmd, [
             'stop', '--hub=localhost:' + port, '--secret=beepboop',
             '--all',
