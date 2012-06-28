@@ -470,12 +470,13 @@ Propagit.prototype.drone = function (fn) {
 Propagit.prototype.stop = function (opts, cb) {
     var self = this;
     
-    stream.readable = true;
-    
-    (opts ? self.getDrones(opts) : self.drones).forEach(function (drone) {
-        drone.stop(opts.pid, cb);
+    self.hub(function (hub) {
+        hub.stop(opts, function(procs) {
+            self.emit('stop', procs);
+            if (cb) cb(null, procs);
+        });
     });
-    
+
     return self;
 };
 
