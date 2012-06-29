@@ -214,9 +214,14 @@ Propagit.prototype.createService = function (remote, conn) {
             if (!opts.env) opts.env = {};
             if (!opts.env.DRONE_ID) opts.env.DRONE_ID = drone.id;
             
-            drone.spawn(opts, function (pids) {
-                procs[drone.id] = pids;
-                if (--pending === 0) cb(null, procs);
+            drone.spawn(opts, function (err, pids) {
+                if (err) {
+                    pending = 1;
+                }
+                else {
+                    procs[drone.id] = pids;
+                }
+                if (--pending === 0) cb(err, procs);
             });
         });
     };
@@ -384,6 +389,13 @@ Propagit.prototype.drone = function (fn) {
     actions.spawn = function (opts, cb) {
         var repo = opts.repo;
         var commit = opts.commit;
+        var dir = opts.cwd || path.join(self.deploydir, repo + '.' + commit);
+        if (!path.existsSync(dir)) {
+            var err = 'commit not deployed: ' + commit;
+            console.error(err);
+            cb(err);
+            return;
+        }
 
         if (opts.count > 1) {
             var s = seq();
@@ -395,8 +407,8 @@ Propagit.prototype.drone = function (fn) {
                 });
             }
 
-            s.seq(function() {}).flatten().filter().seq(function(ids) {
-                cb(null, ids);
+            s.forEach(function() {}).flatten().seq(function() {
+                cb(null, Array.prototype.slice.call(arguments));
             });
             return;
         }
@@ -422,8 +434,6 @@ Propagit.prototype.drone = function (fn) {
         Object.keys(opts.env || {}).forEach(function (key) {
             process.env[key] = opts.env[key];
         });
-        
-        var dir = opts.cwd || path.join(self.deploydir, repo + '.' + commit);
         
         var cmd = opts.command[0];
         var args = opts.command.slice(1);

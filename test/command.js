@@ -116,7 +116,7 @@ test('command line deploy', function (t) {
                 exec(
                     'git push ' + gitURI + ' master',
                     { cwd : dirs.repo },
-                    deploy.bind(null, commits[1], testSecondVersion.bind(null, makeMoreDrones))
+                    deploy.bind(null, commits[1], testSecondVersion.bind(null, testSpawnError))
                 );
             }
         ]);
@@ -133,22 +133,14 @@ test('command line deploy', function (t) {
         s.seq(cb);
     }
 
-    function makeMoreDrones () {
-        var newDroneCount = 2;
-        for (var i = 0; i < newDroneCount; i++) {
-            makeDrone();
-        }
-        setTimeout(spawnWithoutDeploy.bind(null, newDroneCount), 1000);
-    }
-
-    function spawnWithoutDeploy (newDroneCount) {
+    function testSpawnError () {
         var run = randomHash();
         ps[run] = spawn(cmd, [
             'spawn', '--hub=localhost:' + port, '--secret=beepboop',
-            '--drone=*', '--limit=' + deployCount, '--count=' + deployCount, '--errlimit=1',
+            '--drone=*', '--count=' + deployCount, '--errlimit=1',
             '--env.PROPAGIT_BEEPITY=boop',
             'webapp', commits[1],
-            'node', 'server.js',
+            'node', 'nonexistent.js',
         ]);
         setTimeout(function() {
             getProcs(function(procs) {
@@ -160,10 +152,45 @@ test('command line deploy', function (t) {
                         }
                     });
                 });
-                t.equal(errorCount, newDroneCount * deployCount);
-                deploy(commits[1], testSecondVersion.bind(null, testHosts));
+                t.equal(errorCount, drones.length * deployCount);
+                testSpawnBeforeDeploy();
             });
         }, 3000);
+    }
+
+    function testSpawnBeforeDeploy () {
+        var newDroneCount = 2;
+        makeMoreDrones(newDroneCount, function() {
+            var run = randomHash();
+            ps[run] = spawn(cmd, [
+                'spawn', '--hub=localhost:' + port, '--secret=beepboop',
+                '--drone=*', '--limit=' + deployCount, '--count=' + deployCount, '--errlimit=1',
+                '--env.PROPAGIT_BEEPITY=boop',
+                'webapp', commits[1],
+                'node', 'server.js',
+            ]);
+            setTimeout(function() {
+                getProcs(function(procs) {
+                    errorCount = 0;
+                    Object.keys(procs).forEach(function(droneId) {
+                        Object.keys(procs[droneId]).forEach(function(processId) {
+                            if (procs[droneId][processId].status === 'error' && procs[droneId][processId].command[1] === 'server.js') {
+                                errorCount++;
+                            }
+                        });
+                    });
+                    t.equal(errorCount, 0);
+                    deploy(commits[1], testSecondVersion.bind(null, testHosts));
+                });
+            }, 1000);
+        });
+    }
+
+    function makeMoreDrones (newDroneCount, cb) {
+        for (var i = 0; i < newDroneCount; i++) {
+            makeDrone();
+        }
+        setTimeout(cb, 1000);
     }
 
     function testHosts () {
