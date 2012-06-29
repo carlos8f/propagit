@@ -116,7 +116,7 @@ test('command line deploy', function (t) {
                 exec(
                     'git push ' + gitURI + ' master',
                     { cwd : dirs.repo },
-                    deploy.bind(null, commits[1], testSecondVersion.bind(null, testMoreDrones))
+                    deploy.bind(null, commits[1], testSecondVersion.bind(null, makeMoreDrones))
                 );
             }
         ]);
@@ -133,11 +133,37 @@ test('command line deploy', function (t) {
         s.seq(cb);
     }
 
-    function testMoreDrones () {
-        for (var i = 0; i < 2; i++) {
+    function makeMoreDrones () {
+        var newDroneCount = 2;
+        for (var i = 0; i < newDroneCount; i++) {
             makeDrone();
         }
-        setTimeout(deploy.bind(null, commits[1], testSecondVersion.bind(null, testHosts)), 1000);
+        setTimeout(spawnWithoutDeploy.bind(null, newDroneCount), 1000);
+    }
+
+    function spawnWithoutDeploy (newDroneCount) {
+        var run = randomHash();
+        ps[run] = spawn(cmd, [
+            'spawn', '--hub=localhost:' + port, '--secret=beepboop',
+            '--drone=*', '--limit=' + deployCount, '--count=' + deployCount, '--errlimit=1',
+            '--env.PROPAGIT_BEEPITY=boop',
+            'webapp', commits[1],
+            'node', 'server.js',
+        ]);
+        setTimeout(function() {
+            getProcs(function(procs) {
+                errorCount = 0;
+                Object.keys(procs).forEach(function(droneId) {
+                    Object.keys(procs[droneId]).forEach(function(processId) {
+                        if (procs[droneId][processId].status === 'error') {
+                            errorCount++;
+                        }
+                    });
+                });
+                t.equal(errorCount, newDroneCount * deployCount);
+                deploy(commits[1], testSecondVersion.bind(null, testHosts));
+            });
+        }, 3000);
     }
 
     function testHosts () {
@@ -163,11 +189,14 @@ test('command line deploy', function (t) {
                     var droneCount = 0;
                     Object.keys(procs).forEach(function (droneId) {
                         droneCount++;
-                        var keys = Object.keys(procs[droneId]);
-                        t.equal(keys.length, deployCount);
-                        keys.forEach(function(processId) {
+                        var runningCount = 0;
+                        Object.keys(procs[droneId]).forEach(function(processId) {
+                            if (procs[droneId][processId].status === 'running') {
+                                runningCount++;
+                            }
                             t.equal(procs[droneId][processId].commit, commits[1]);
                         });
+                        t.equal(runningCount, deployCount);
                     });
                     t.equal(droneCount, drones.length);
                     stopAll();

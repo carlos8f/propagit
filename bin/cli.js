@@ -87,6 +87,7 @@ else if (cmd === 'spawn') {
         command : command,
         limit : argv.limit,
         count : argv.count || 1,
+        errlimit : argv.errlimit || 5,
         env : argv.env || {},
     });
     s.on('spawn', function () {
@@ -188,6 +189,8 @@ else {
         '',
         '    --count      how many to spawn per drone (default: 1)',
         '    --limit      max processes for commit per drone',
+        '    --errlimit   max respawns to allow in the first 30 seconds',
+        '                 (default: 1)',
         '',
         '  propagit OPTIONS ps',
         '',

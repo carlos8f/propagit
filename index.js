@@ -404,7 +404,7 @@ Propagit.prototype.drone = function (fn) {
         if (opts.limit) {
             var running = 0;
             Object.keys(self.processes).forEach(function(id) {
-                if (self.processes[id].commit === commit) {
+                if (self.processes[id].commit === commit && self.processes[id].status !== 'error') {
                     running++;
                 }
             });
@@ -427,6 +427,7 @@ Propagit.prototype.drone = function (fn) {
         
         var cmd = opts.command[0];
         var args = opts.command.slice(1);
+        var spawned = new Date();
         
         var processes = self.processes;
         (function respawn () {
@@ -439,6 +440,7 @@ Propagit.prototype.drone = function (fn) {
                 cwd : dir,
                 process : ps,
                 respawn : respawn,
+                respawns : (self.processes[id] && self.processes[id].respawns) || 0,
                 drone : actions.id,
             };
             
@@ -473,7 +475,17 @@ Propagit.prototype.drone = function (fn) {
                     delete self.processes[id];
                 }
                 else if (proc.status !== 'stopped') {
+                    if (opts.errlimit) {
+                        if (new Date().getTime() - spawned.getTime() <= 30000 && proc.respawns >= opts.errlimit) {
+                            proc.status = 'error';
+                            setTimeout(function() {
+                                delete self.processes[id];
+                            }, 10000);
+                            return;
+                        }
+                    }
                     proc.status = 'respawning';
+                    proc.respawns++;
                     setTimeout(function () {
                         if (proc.status !== 'stopped') respawn();
                     }, 1000);
