@@ -381,14 +381,15 @@ Propagit.prototype.drone = function (fn) {
 
         if (opts.count > 1) {
             var s = seq();
+            var c = opts.count;
             opts.count = 1;
-            for (var i = 0; i < opts.count; i++) {
+            for (var i = 0; i < c; i++) {
                 s.par(function() {
                     actions.spawn(opts, this);
                 });
             }
 
-            s.flatten().filter().seq(function(ids) {
+            s.seq(function() {}).flatten().filter().seq(function(ids) {
                 cb(null, ids);
             });
             return;
