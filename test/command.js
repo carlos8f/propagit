@@ -14,19 +14,19 @@ var dirs = {
     hub : tmpdir + '/hub',
     repo : tmpdir + '/webapp',
 };
-var drones = ['drone1', 'drone2', 'drone3'];
-drones.forEach(function (drone) {
-    dirs[drone] = tmpdir + '/' + drone;
-});
-Object.keys(dirs).forEach(function (name) {
+Object.keys(dirs).forEach(function(name) {
     mkdirp.sync(dirs[name]);
 });
+var drones = [];
+var initialDrones = 3;
+var deployCount = 2;
 
 var src = fs.readFileSync(__dirname + '/webapp/server.js');
 fs.writeFileSync(dirs.repo + '/server.js', src);
 
 test('command line deploy', function (t) {
     var port = Math.floor(Math.random() * 5e4 + 1e4);
+    var gitURI = 'http://localhost:' + (port + 1) + '/webapp';
     
     var ps = {};
     ps.hub = spawn(
@@ -38,20 +38,28 @@ test('command line deploy', function (t) {
 
     httpPorts = [], commits = [];
     
-    drones.forEach(function (drone) {
-        ps[drone] = spawn(
+    for (var i = 0; i < initialDrones; i++) {
+        makeDrone();
+    }
+
+    function makeDrone () {
+        var name = randomHash();
+        drones.push(name);
+        dirs[name] = tmpdir + '/' + name;
+        mkdirp.sync(dirs[name]);
+        ps[name] = spawn(
             cmd, [ 'drone', '--hub=localhost:' + port, '--secret=beepboop' ],
-            { cwd : dirs[drone] }
+            { cwd : dirs[name] }
         );
-        ps[drone].stdout.on('data', function (buf) {
+        ps[name].stdout.on('data', function (buf) {
             var matches = /port:(\d+)/.exec(buf);
             if (matches) {
                 httpPorts.push(parseInt(matches[1]));
             }
         });
-        ps[drone].stdout.pipe(process.stdout, { end : false });
-        ps[drone].stderr.pipe(process.stderr, { end : false });
-    });
+        ps[name].stdout.pipe(process.stdout, { end : false });
+        ps[name].stderr.pipe(process.stderr, { end : false });
+    }
 
     function doCommands (commands) {
         var opts = { cwd : dirs.repo };
@@ -78,9 +86,7 @@ test('command line deploy', function (t) {
             function (line) {
                 commits.push(line.split(/\s+/)[1]);
                 exec(
-                    'git push http://localhost:'
-                        + (port + 1)
-                        + '/webapp master',
+                    'git push ' + gitURI + ' master',
                     { cwd : dirs.repo },
                     deploy.bind(null, commits[0], testInitialVersion)
                 );
@@ -90,7 +96,7 @@ test('command line deploy', function (t) {
 
     function testInitialVersion () {
         var s = seq(), expected = 'beepity';
-        t.equal(httpPorts.length, drones.length);
+        t.equal(httpPorts.length, drones.length * deployCount);
         httpPorts.forEach(function (port) {
             s.par(function () {
                 testServer(port, expected, this);
@@ -108,38 +114,46 @@ test('command line deploy', function (t) {
             function (line) {
                 commits.push(line.split(/\s+/)[1]);
                 exec(
-                    'git push http://localhost:'
-                        + (port + 1)
-                        + '/webapp master',
+                    'git push ' + gitURI + ' master',
                     { cwd : dirs.repo },
-                    deploy.bind(null, commits[1], testSecondVersion)
+                    deploy.bind(null, commits[1], testSecondVersion.bind(null, testMoreDrones))
                 );
             }
         ]);
     }
 
-    function testSecondVersion () {
+    function testSecondVersion (cb) {
         var s = seq(), expected = 'boopity';
-        t.equal(httpPorts.length, drones.length);
+        t.equal(httpPorts.length, drones.length * deployCount);
         httpPorts.forEach(function (port) {
             s.par(function () {
                 testServer(port, expected, this);
             });
         });
-        s.seq(stopFirstCommit.bind(null));
+        s.seq(cb);
+    }
+
+    function testMoreDrones () {
+        for (var i = 0; i < 2; i++) {
+            makeDrone();
+        }
+        setTimeout(deploy.bind(null, commits[1], testSecondVersion.bind(null, stopFirstCommit)), 1000);
     }
 
     function stopFirstCommit () {
         stop(['--commit', commits[0].substr(0, 8)], function() {
             setTimeout(function() {
                 getProcs(function(procs) {
+                    var droneCount = 0;
                     Object.keys(procs).forEach(function (droneId) {
+                        droneCount++;
                         var keys = Object.keys(procs[droneId]);
-                        t.equal(keys.length, 1);
+                        t.equal(keys.length, deployCount);
                         keys.forEach(function(processId) {
                             t.equal(procs[droneId][processId].commit, commits[1]);
                         });
                     });
+                    t.equal(droneCount, drones.length);
                     stopAll();
                 });
             }, 2000);
@@ -150,10 +164,13 @@ test('command line deploy', function (t) {
         stop(['--all'], function() {
             setTimeout(function() {
                 getProcs(function(procs) {
+                    var droneCount = 0;
                     Object.keys(procs).forEach(function (droneId) {
+                        droneCount++;
                         var keys = Object.keys(procs[droneId]);
                         t.equal(keys.length, 0);
                     });
+                    t.equal(droneCount, drones.length);
                     t.end();
                 });
             }, 2000);
@@ -174,7 +191,8 @@ test('command line deploy', function (t) {
         var run = randomHash();
         ps[run] = spawn(cmd, [
             'spawn', '--hub=localhost:' + port, '--secret=beepboop',
-            '--drone=*', '--env.PROPAGIT_BEEPITY=boop',
+            '--drone=*', '--count=' + deployCount, '--limit=' + deployCount,
+            '--env.PROPAGIT_BEEPITY=boop',
             'webapp', commit,
             'node', 'server.js',
         ]);
@@ -209,7 +227,7 @@ test('command line deploy', function (t) {
                     }
                 });
             });
-            t.equal(running, drones.length);
+            t.equal(running, drones.length * deployCount);
             cb();
         });
     }

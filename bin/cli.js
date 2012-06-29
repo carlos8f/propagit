@@ -85,6 +85,8 @@ else if (cmd === 'spawn') {
         repo : repo,
         commit : commit,
         command : command,
+        limit : argv.limit,
+        count : argv.count || 1,
         env : argv.env || {},
     });
     s.on('spawn', function () {
@@ -161,6 +163,9 @@ else {
         '    Run COMMAND on all the drones specified by OPTIONS.',
         '    You can specify environment variables to run with'
             + ' --env.NAME=VALUE.',
+        '',
+        '    --count      how many to spawn per drone (default: 1)',
+        '    --limit      max processes for commit per drone',
         '',
         '  propagit OPTIONS ps',
         '',
