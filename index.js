@@ -234,7 +234,7 @@ Propagit.prototype.createService = function (remote, conn) {
         if (!Array.isArray(opts.pid)) opts.pid = [ opts.pid ];
         
         drones.forEach(function (drone) {
-            drone.stop(opts.pid, function (pids) {
+            drone.stop(opts, function (pids) {
                 procs[drone.id] = pids;
                 if (--pending === 0) cb(null, procs);
             });
@@ -326,21 +326,36 @@ Propagit.prototype.drone = function (fn) {
         ;
     };
     
-    actions.stop = function (ids, cb) {
+    actions.stop = function (opts, cb) {
         if (typeof cb !== 'function') cb = function () {};
-        if (ids[0] === '*') ids = Object.keys(self.processes);
+        var ids = opts.pid;
         if (!Array.isArray(ids)) ids = [ ids ];
-        cb(ids.filter(function (id) {
+        if (ids[0] === '*' || opts.commit) ids = Object.keys(self.processes);
+        var filter;
+        if (opts.commit) {
+            filter = function (proc) {
+                return proc && proc.commit.indexOf(opts.commit) === 0;
+            };
+        }
+
+        cb(ids.filter(stopProcess.bind(null, filter)));
+
+        function stopProcess(filter, id) {
             var proc = self.processes[id];
-            if (!proc) return false;
-            self.emit('stop', { drone : actions.id, id : id });
-            
-            proc.status = 'stopped';
-            proc.process.kill();
-            delete self.processes[id];
-            
-            return true;
-        }));
+            filter = filter || function(proc) {
+                return !!proc;
+            };
+            if (filter(proc)) {
+                self.emit('stop', { drone : actions.id, id : id });
+                proc.status = 'stopped';
+                proc.process.kill();
+                delete self.processes[id];
+                return true;
+            }
+            else {
+                return false;
+            }
+        }
     };
     
     actions.restart = function (id, cb) {

@@ -36,7 +36,7 @@ test('command line deploy', function (t) {
     ps.hub.stdout.pipe(process.stdout, { end : false });
     ps.hub.stderr.pipe(process.stderr, { end : false });
 
-    httpPorts = [];
+    httpPorts = [], commits = [];
     
     drones.forEach(function (drone) {
         ps[drone] = spawn(
@@ -76,13 +76,13 @@ test('command line deploy', function (t) {
             'git commit -m"web server"',
             'git log|head -n1',
             function (line) {
-                var commit = line.split(/\s+/)[1]
+                commits.push(line.split(/\s+/)[1]);
                 exec(
                     'git push http://localhost:'
                         + (port + 1)
                         + '/webapp master',
                     { cwd : dirs.repo },
-                    deploy.bind(null, commit, testInitialVersion)
+                    deploy.bind(null, commits[0], testInitialVersion)
                 );
             }
         ]), 2000);
@@ -106,13 +106,13 @@ test('command line deploy', function (t) {
             'git commit -a -m "boopify"',
             'git log|head -n1',
             function (line) {
-                var commit = line.split(/\s+/)[1]
+                commits.push(line.split(/\s+/)[1]);
                 exec(
                     'git push http://localhost:'
                         + (port + 1)
                         + '/webapp master',
                     { cwd : dirs.repo },
-                    deploy.bind(null, commit, testSecondVersion)
+                    deploy.bind(null, commits[1], testSecondVersion)
                 );
             }
         ]);
@@ -126,20 +126,53 @@ test('command line deploy', function (t) {
                 testServer(port, expected, this);
             });
         });
-        s.seq(stop.bind(null));
+        s.seq(stopFirstCommit.bind(null));
+    }
+
+    function stopFirstCommit () {
+        stop(['--commit', commits[0].substr(0, 8)], function() {
+            setTimeout(function() {
+                getProcs(function(procs) {
+                    Object.keys(procs).forEach(function (droneId) {
+                        var keys = Object.keys(procs[droneId]);
+                        t.equal(keys.length, 1);
+                        keys.forEach(function(processId) {
+                            t.equal(procs[droneId][processId].commit, commits[1]);
+                        });
+                    });
+                    stopAll();
+                });
+            }, 2000);
+        });
+    }
+
+    function stopAll () {
+        stop(['--all'], function() {
+            setTimeout(function() {
+                getProcs(function(procs) {
+                    Object.keys(procs).forEach(function (droneId) {
+                        var keys = Object.keys(procs[droneId]);
+                        t.equal(keys.length, 0);
+                    });
+                    t.end();
+                });
+            }, 2000);
+        });
     }
     
     function deploy (commit, cb, err, stdout, stderr) {
         if (err) t.fail(err);
-        ps.deploy = spawn(cmd, [
+        var deploy = randomHash();
+        ps[deploy] = spawn(cmd, [
             'deploy', '--hub=localhost:' + port, '--secret=beepboop',
             'webapp', commit
         ]);
-        ps.deploy.on('exit', run.bind(null, commit, cb));
+        ps[deploy].on('exit', run.bind(null, commit, cb));
     }
     
     function run (commit, cb) {
-        ps.run = spawn(cmd, [
+        var run = randomHash();
+        ps[run] = spawn(cmd, [
             'spawn', '--hub=localhost:' + port, '--secret=beepboop',
             '--drone=*', '--env.PROPAGIT_BEEPITY=boop',
             'webapp', commit,
@@ -149,14 +182,19 @@ test('command line deploy', function (t) {
         setTimeout(assertRunning.bind(null, commit, cb), 2000);
     }
 
+    function randomHash () {
+        return Math.floor(Math.random() * (1<<24)).toString(16);
+    }
+
     function getProcs (cb) {
         var json = '';
-        var p = spawn(cmd, [
+        var p = randomHash();
+        ps[p] = spawn(cmd, [
             'ps', '--json',
             '--hub=localhost:' + port, '--secret=beepboop',
         ]);
-        p.stdout.on('data', function (buf) { json += buf });
-        p.stdout.on('end', function () {
+        ps[p].stdout.on('data', function (buf) { json += buf });
+        ps[p].stdout.on('end', function () {
             cb(JSON.parse(json));
         });
     }
@@ -193,32 +231,12 @@ test('command line deploy', function (t) {
         });
     }
 
-    function stop () {
-        ps.stop = spawn(cmd, [
+    function stop (args, cb) {
+        var stop = randomHash();
+        ps[stop] = spawn(cmd, [
             'stop', '--hub=localhost:' + port, '--secret=beepboop',
-            '--all',
-        ]);
-        ps.stop.stdout.pipe(process.stdout, { end : false });
-        ps.stop.stderr.pipe(process.stderr, { end : false });
-        ps.stop.on('exit', function () {
-            setTimeout(assertAllStopped, 1000);
-        });
-    }
-
-    function assertAllStopped () {
-        ps.ps2 = spawn(cmd, [
-            'ps', '--json',
-            '--hub=localhost:' + port, '--secret=beepboop',
-        ]);
-        var json = '';
-        ps.ps2.stdout.on('data', function (buf) { json += buf });
-        ps.ps2.stdout.on('end', function () {
-            var obj = JSON.parse(json);
-            Object.keys(obj).forEach(function (droneId) {
-                t.equal(Object.keys(obj[droneId]).length, 0);
-            });
-            t.end();
-        });
+        ].concat(args));
+        ps[stop].on('exit', cb);
     }
     
     t.on('end', function () {
