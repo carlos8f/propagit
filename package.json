@@ -31,7 +31,8 @@
         "mkdirp" : "0.3.x"
     },
     "devDependencies" : {
-        "tap" : "~0.2.3"
+        "tap" : "~0.2.3",
+        "seq" : "~0.3.5"
     },
     "engines" : {
         "node" : ">=0.4.0"
