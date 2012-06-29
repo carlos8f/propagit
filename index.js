@@ -155,6 +155,7 @@ Propagit.prototype.createService = function (remote, conn) {
         if (pending === 0) emit('end')
         
         drones.forEach(function (drone) {
+            emit('addr', drone.id, drone.addr);
             drone.ps(function (ps) {
                 emit('data', drone.id, ps);
                 if (--pending === 0) emit('end');
@@ -237,20 +238,25 @@ Propagit.prototype.createService = function (remote, conn) {
     
     service.register = function (role, obj) {
         if (role === 'drone') {
-            self.drones.push(obj);
+            conn.on('ready', onready);
+            function onready () {
+                obj.addr = conn.stream.remoteAddress;
+                self.drones.push(obj);
+
+                if (typeof obj.fetch !== 'function') return;
+            
+                fs.readdir(self.repodir, function (err, repos) {
+                    if (err) console.error(err)
+                    else repos.forEach(function (repo) {
+                        obj.fetch(repo, logger(obj.id));
+                    });
+                });
+            }
+            if (conn.stream) onready();
             
             conn.on('end', function () {
                 var ix = self.drones.indexOf(obj);
                 if (ix >= 0) self.drones.splice(ix, 1);
-            });
-            
-            if (typeof obj.fetch !== 'function') return;
-            
-            fs.readdir(self.repodir, function (err, repos) {
-                if (err) console.error(err)
-                else repos.forEach(function (repo) {
-                    obj.fetch(repo, logger(obj.id));
-                });
             });
         }
     };

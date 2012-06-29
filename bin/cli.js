@@ -117,6 +117,28 @@ else if (cmd === 'ps') {
         });
     }
 }
+else if (cmd === 'hosts') {
+    var p = propagit(argv);
+    var s = p.ps();
+    
+    var addrs = {};
+    s.on('addr', function (name, addr) {
+        addrs[addr] || (addrs[addr] = []);
+        addrs[addr].push(name);
+    });
+
+    s.on('end', function () {
+        if (argv.json) {
+            console.log(JSON.stringify(addrs));
+        }
+        else {
+            Object.keys(addrs).forEach(function(addr) {
+                console.log(addr + "\t" + addrs[addr].join(' '));
+            });
+        }
+        p.hub.close();
+    });
+}
 else if (cmd === 'stop') {
     var s = propagit(argv).stop({
         drone : argv.drone || '*',
@@ -170,6 +192,14 @@ else {
         '  propagit OPTIONS ps',
         '',
         '    List all the running processes on all the drones.',
+        '',
+        '    --json       output a JSON representation',
+        '',
+        '  propagit OPTIONS hosts',
+        '',
+        '    List drones grouped by IP address.',
+        '',
+        '    --json       output a JSON representation',
         '',
         '  propagit OPTIONS stop [--all | --commit=<hash> | PID PID...]',
         '',

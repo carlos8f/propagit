@@ -137,7 +137,23 @@ test('command line deploy', function (t) {
         for (var i = 0; i < 2; i++) {
             makeDrone();
         }
-        setTimeout(deploy.bind(null, commits[1], testSecondVersion.bind(null, stopFirstCommit)), 1000);
+        setTimeout(deploy.bind(null, commits[1], testSecondVersion.bind(null, testHosts)), 1000);
+    }
+
+    function testHosts () {
+        var json = '';
+        var p = randomHash();
+        ps[p] = spawn(cmd, [
+            'hosts', '--json', '--hub=localhost:' + port, '--secret=beepboop',
+        ]);
+        ps[p].stdout.on('data', function (buf) { json += buf });
+        ps[p].stdout.on('end', function () {
+            var obj = JSON.parse(json);
+            var keys = Object.keys(obj);
+            t.equal(keys.length, 1);
+            t.equal(obj[keys[0]].length, drones.length);
+            stopFirstCommit();
+        });
     }
 
     function stopFirstCommit () {
