@@ -2,6 +2,7 @@ var upnode = require('upnode');
 var pushover = require('pushover');
 var mkdirp = require('mkdirp');
 var spawn = require('child_process').spawn;
+var seq = require('seq');
 
 var fs = require('fs');
 var path = require('path');
@@ -212,15 +213,8 @@ Propagit.prototype.createService = function (remote, conn) {
             if (!opts.env) opts.env = {};
             if (!opts.env.DRONE_ID) opts.env.DRONE_ID = drone.id;
             
-            drone.spawn(opts, function (pid) {
-                var opts_ = {};
-                Object.keys(opts).forEach(function (key) {
-                    opts_[key] = opts[key];
-                });
-                opts_.drone = drone.id;
-                opts_.id = pid;
-                
-                procs[drone.id] = pid;
+            drone.spawn(opts, function (pids) {
+                procs[drone.id] = pids;
                 if (--pending === 0) cb(null, procs);
             });
         });
@@ -384,6 +378,33 @@ Propagit.prototype.drone = function (fn) {
     actions.spawn = function (opts, cb) {
         var repo = opts.repo;
         var commit = opts.commit;
+
+        if (opts.count > 1) {
+            var s = seq();
+            opts.count = 1;
+            for (var i = 0; i < opts.count; i++) {
+                s.par(function() {
+                    actions.spawn(opts, this);
+                });
+            }
+
+            s.flatten().filter().seq(function(ids) {
+                cb(null, ids);
+            });
+            return;
+        }
+
+        if (opts.limit) {
+            var running = 0;
+            Object.keys(self.processes).forEach(function(id) {
+                if (self.processes[id].commit === commit) {
+                    running++;
+                }
+            });
+            if (running >= opts.limit) {
+                return cb(null, []);
+            }
+        }
         
         process.env.COMMIT = commit;
         process.env.REPO = repo;
@@ -462,7 +483,7 @@ Propagit.prototype.drone = function (fn) {
             });
         })();
         
-        cb(id);
+        cb(null, [id]);
     };
     
     actions.id = (Math.random() * Math.pow(16,8)).toString(16);

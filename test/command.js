@@ -126,7 +126,7 @@ test('command line deploy', function (t) {
                 testServer(port, expected, this);
             });
         });
-        s.seq(stopFirstCommit.bind(null));
+        s.seq(stopFirstCommit);
     }
 
     function stopFirstCommit () {
