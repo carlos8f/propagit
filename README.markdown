@@ -52,29 +52,51 @@ Usage:
 
   propagit OPTIONS drone
 
-    Listen to the hub for deploy events to execute commands with
-    environment variables $REPO and $COMMIT set on each deploy.
- 
+    Listen to the hub for deploy events and execute COMMAND with
+    environment variables $REPO and $COMMIT on each deploy.
+
     --hub        connect to the hub host:port
     --secret     password to use
     --basedir    directory to put repositories and deploys in
-  
-  propagit OPTIONS deploy REPO COMMIT
-  
+
+  propagit OPTIONS deploy REPO COMMIT [COMMAND...]
+
     Deploy COMMIT to all of the drones listening to the hub.
 
     --hub        connect to the hub host:port
     --secret     password to use
-  
+
   propagit OPTIONS spawn REPO COMMIT [COMMAND...]
-  
+
     Run COMMAND on all the drones specified by OPTIONS.
-    $PROCESS_ID and $DRONE_ID will be set for every spawned process.
-    Note that $PROCESS_ID is not the system PID value.
+    You can specify environment variables to run with --env.NAME=VALUE.
+
+    --count      how many to spawn per drone (default: 1)
+    --limit      max processes for commit per drone
+    --errlimit   max respawns to allow in the first 30 seconds
+                 (default: 1)
 
   propagit OPTIONS ps
-  
+
     List all the running processes on all the drones.
+
+    --json       output a JSON representation
+
+  propagit OPTIONS hosts
+
+    List drones grouped by IP address.
+
+    --json       output a JSON representation
+
+  propagit OPTIONS stop [--all | --commit=<hash> | PID PID...]
+
+    Stop spawned processes on all drones specified by OPTIONS.
+    If --drone is not specified, all drones will be selected.
+    A leading "pid#" will be stripped from PIDs.
+
+    --all        stop all processes on each selected drone
+    --commit     stop processes by commit hash on each
+                 selected drone
 ```
 
 methods
