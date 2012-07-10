@@ -296,7 +296,7 @@ Propagit.prototype.drone = function (fn) {
         spawn('git', [ 'init', '--bare', p.repodir ])
             .on('exit', function (code, sig) {
                 if (code) cb(code, sig)
-                else spawn('git', [ 'fetch', p.origin ], { cwd : p.repodir })
+                else spawn('git', [ 'fetch', p.origin, '+refs/heads/*:refs/remotes/origin/*' ], { cwd : p.repodir })
                     .on('exit', cb)
                 ;
             })
@@ -313,7 +313,7 @@ Propagit.prototype.drone = function (fn) {
         process.env.COMMIT = commit;
         process.env.REPO = repo;
         
-        spawn('git', [ 'clone', p.repodir, dir ])
+        spawn('git', [ 'clone', '-n', p.repodir, dir ])
             .on('exit', function (code, sig) {
                 if (code) cb(code, sig)
                 else spawn('git', [ 'checkout', commit ], { cwd : dir })
