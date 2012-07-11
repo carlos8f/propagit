@@ -27,7 +27,7 @@
     "dependencies" : {
         "optimist" : "0.3.x",
         "upnode" : "~0.2.0",
-        "pushover" : "0.1.x",
+        "pushover" : "git+https://github.com/carlos8f/pushover.git",
         "mkdirp" : "0.3.x",
         "seq" : "~0.3.5"
     },
