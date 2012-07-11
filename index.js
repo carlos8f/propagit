@@ -390,7 +390,8 @@ Propagit.prototype.drone = function (fn) {
         var repo = opts.repo;
         var commit = opts.commit;
         var dir = opts.cwd || path.join(self.deploydir, repo + '.' + commit);
-        if (!path.existsSync(dir)) {
+        fs.existsSync || (fs.existsSync = path.existsSync);
+        if (!fs.existsSync(dir)) {
             var err = 'commit not deployed: ' + commit;
             console.error(err);
             cb(err);
