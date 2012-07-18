@@ -352,9 +352,8 @@ Propagit.prototype.drone = function (fn) {
             };
             if (filter(proc)) {
                 self.emit('stop', { drone : actions.id, id : id });
-                proc.status = 'stopped';
+                proc.status = 'stopping';
                 proc.process.kill();
-                delete self.processes[id];
                 return true;
             }
             else {
@@ -368,7 +367,7 @@ Propagit.prototype.drone = function (fn) {
         var proc = self.processes[id];
         if (!proc) cb('no such process')
         else {
-            if (proc.status === 'stopped') proc.respawn()
+            if (proc.status === 'stopping') proc.respawn()
             else proc.process.kill()
         }
     };
@@ -482,10 +481,10 @@ Propagit.prototype.drone = function (fn) {
                     command : opts.command,
                 });
                 
-                if (opts.once) {
+                if (opts.once || proc.status === 'stopping') {
                     delete self.processes[id];
                 }
-                else if (proc.status !== 'stopped') {
+                else if (proc.status !== 'respawning') {
                     if (opts.errlimit) {
                         if (new Date().getTime() - spawned.getTime() <= 30000 && proc.respawns >= opts.errlimit) {
                             proc.status = 'error';
@@ -498,7 +497,7 @@ Propagit.prototype.drone = function (fn) {
                     proc.status = 'respawning';
                     proc.respawns++;
                     setTimeout(function () {
-                        if (proc.status !== 'stopped') respawn();
+                        if (proc.status === 'respawning') respawn();
                     }, 1000);
                 }
             });

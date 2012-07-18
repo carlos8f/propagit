@@ -149,7 +149,7 @@ else if (cmd === 'stop') {
     });
     s.on('stop', function(drones) {
         Object.keys(drones).forEach(function (id) {
-            console.log('[' + id + '] stopped ' + drones[id].join(' '));
+            console.log('[' + id + '] stopping ' + drones[id].join(' '));
         });
         s.hub.close();
     });
